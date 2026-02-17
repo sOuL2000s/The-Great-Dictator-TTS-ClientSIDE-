@@ -1,0 +1,9 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom font (optional but recommended for a strong theme) */
+/* You would need to link this font in index.html */
+body {
+    font-family: 'Arial', sans-serif;
+}
