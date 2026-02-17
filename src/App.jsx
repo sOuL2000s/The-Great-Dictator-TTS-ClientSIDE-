@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import DictatorControls from './components/DictatorControls';
 
 // Custom Hook for Local Storage (for settings and text persistence)
@@ -43,6 +43,9 @@ const tokenizeText = (rawText) => {
 const DEFAULT_TEXT = "Greetings, citizen. You have entered the domain of The Great Dictator. Click 'Start Dictation' to begin, or 'Generate Audio File' to capture the speech as a file.";
 
 function App() {
+    const textDisplayRef = useRef(null);
+    const highlightedWordRef = useRef(null);
+    
     // Local Storage Persisted States
     const [text, setText] = useLocalStorage('dictatorText', DEFAULT_TEXT);
     const [selectedVoice, setSelectedVoice] = useLocalStorage('dictatorVoice', null);
@@ -53,6 +56,7 @@ function App() {
     
     // Runtime States
     const [isSpeaking, setIsSpeaking] = useState(false);
+    const [isGeneratingAudio, setIsGeneratingAudio] = useState(false); // State for audio file generation
     const [voices, setVoices] = useState([]);
     const [error, setError] = useState(null);
     
@@ -131,21 +135,7 @@ function App() {
         return THEMES.NEUTRAL;
     }, [selectedVoice, voices, THEMES]);
 
-    const handlePause = () => {
-        if (synth && synth.speaking && !synth.paused) {
-            synth.pause();
-            setIsPaused(true);
-            setIsSpeaking(false); 
-        }
-    };
 
-    const handleResume = () => {
-        if (synth && synth.paused) {
-            synth.resume();
-            setIsPaused(false);
-            setIsSpeaking(true); 
-        }
-    };
 
     // --- Voice Loading (Same as before) ---
     const loadVoices = useCallback(() => {
@@ -171,6 +161,18 @@ function App() {
         }
     }, [error]);
     
+    // Effect for auto-scrolling to the currently spoken word
+    useEffect(() => {
+        // Only attempt to scroll if speaking, we have a valid index (> -1), and both refs are present
+        if (isSpeaking && currentCharIndex > -1 && highlightedWordRef.current && textDisplayRef.current) {
+            highlightedWordRef.current.scrollIntoView({
+                behavior: 'smooth',
+                block: 'nearest', // Ensures the element is visible without jumping too far
+                inline: 'nearest'
+            });
+        }
+    }, [currentCharIndex, isSpeaking]);
+    
     useEffect(() => {
         if (synth) {
             synth.onvoiceschanged = loadVoices;
@@ -189,9 +191,31 @@ function App() {
         }
     }, [loadVoices, synth]);
 
+    const handlePause = () => {
+        if (synth && synth.speaking && !synth.paused) {
+            synth.pause();
+            setIsPaused(true);
+            setIsSpeaking(false);
+            
+            // If the user pauses during a generation attempt, we cancel the generation attempt
+            if (isGeneratingAudio) {
+                setIsGeneratingAudio(false);
+                setError("Audio generation cancelled by pause action.");
+            }
+        }
+    };
+
+    const handleResume = () => {
+        if (synth && synth.paused) {
+            synth.resume();
+            setIsPaused(false);
+            setIsSpeaking(true); 
+        }
+    };
+
     // --- Core Dictation Logic (Modified for Recording and Pause/Resume) ---
 
-    const handleSpeak = () => {
+    const handleSpeak = (isRecordingAttempt = false) => {
         if (synth && synth.paused) {
             handleResume();
             return;
@@ -203,7 +227,10 @@ function App() {
         synth.cancel(); // Cancel previous speech if not paused
 
         const voiceObj = voices.find(v => v.name === selectedVoice);
-        if (!voiceObj) return setError("Selected voice not found.");
+        if (!voiceObj) {
+            if (isRecordingAttempt) setIsGeneratingAudio(false);
+            return setError("Selected voice not found.");
+        }
 
         // We use the cleaned version for the utterance itself
         const utteranceText = cleanText(textToUse);
@@ -229,12 +256,20 @@ function App() {
         utterance.onend = () => {
             setIsSpeaking(false);
             setCurrentCharIndex(-1); // Reset index
+            
+            if (isRecordingAttempt) {
+                // We handle the limitation failure in handleGenerateAudio now.
+                setIsGeneratingAudio(false); 
+            }
         };
         
         utterance.onerror = (event) => {
             setError(`Speech Error: ${event.error}`);
             setIsSpeaking(false);
             setCurrentCharIndex(-1);
+            if (isRecordingAttempt) {
+                setIsGeneratingAudio(false);
+            }
         };
 
         synth.speak(utterance);
@@ -245,9 +280,26 @@ function App() {
             synth.cancel();
             setIsSpeaking(false);
             setIsPaused(false); // Reset pause state
+            setIsGeneratingAudio(false); // Stop recording attempt if active
         }
     };
     
+    const handleGenerateAudio = () => {
+        const textToUse = selectedText || text;
+        if (!textToUse) {
+            setError("Please enter text before attempting to generate audio.");
+            return;
+        }
+        
+        setIsGeneratingAudio(true);
+        
+        // Set an explanatory error immediately as we know native TTS cannot be recorded.
+        setError("Audio file generation requires replacing the native SpeechSynthesis API with a library that uses the Web Audio API (e.g., a pure JS TTS engine or a serverless cloud API integration) to access raw audio data for file encoding. Functionality not yet implemented.");
+        
+        // Reset the UI state after a short delay so the user sees the notification
+        setTimeout(() => setIsGeneratingAudio(false), 3000); 
+    };
+
     const handleClearData = () => {
         if (window.confirm("Are you sure you want to clear all saved text, settings, and local storage data?")) {
             localStorage.removeItem('dictatorText');
@@ -427,17 +479,21 @@ function App() {
                 {isSpeaking ? (
                     // 1. Highlighted Text Display (Read-only)
                     <div 
+                        ref={textDisplayRef} // Apply ref here
                         className="flex-1 w-full p-4 text-lg bg-slate-800 rounded-lg border-2 border-slate-700 overflow-y-auto font-mono text-left select-none"
                         style={{ whiteSpace: 'pre-wrap' }}
                     >
                         {tokenData.map((item, mapIndex) => {
                             let highlightClass = '';
+                            let isCurrentWord = false;
+                            
                             if (item.isWord && currentCharIndex > -1) {
                                 const start = item.cleanIndexStart;
                                 const end = item.cleanIndexStart + item.cleanLength;
                                 
                                 // Check if currentCharIndex falls within the boundary of the current word
                                 if (currentCharIndex >= start && currentCharIndex < end) {
+                                    isCurrentWord = true;
                                     // Use dynamic accent color for highlighting. Added underline/emphasis for beauty.
                                     highlightClass = `text-white rounded px-0.5 font-semibold underline decoration-wavy decoration-${accentClass} decoration-2 bg-${accentClass}/30`;
                                 }
@@ -447,6 +503,7 @@ function App() {
                                 <span 
                                     key={mapIndex} 
                                     className={highlightClass}
+                                    ref={isCurrentWord ? highlightedWordRef : null}
                                 >
                                     {item.token}
                                 </span>
@@ -493,8 +550,8 @@ function App() {
                     
                     {/* Speak / Pause / Resume Button */}
                     <button
-                        onClick={isSpeaking ? handlePause : handleSpeak}
-                        disabled={!selectedVoice || (!text && !synth.paused)}
+                        onClick={isSpeaking ? handlePause : () => handleSpeak(false)}
+                        disabled={!selectedVoice || (!text && !synth.paused) || isGeneratingAudio}
                         className={`py-3 px-8 text-xl font-bold rounded-lg transition duration-200 min-w-[180px] 
                             ${isSpeaking 
                                 ? 'bg-yellow-600 hover:bg-yellow-700 text-white shadow-lg shadow-yellow-600/50' 
@@ -506,8 +563,8 @@ function App() {
                         {isSpeaking ? 'PAUSE' : (isPaused ? 'RESUME DICTATION' : 'START DICTATION')}
                     </button>
 
-                    {/* Stop Button (appears when speaking or paused) */}
-                    {(isSpeaking || isPaused) && (
+                    {/* Stop Button (appears when speaking or paused or generating audio) */}
+                    {(isSpeaking || isPaused || isGeneratingAudio) && (
                         <button
                             onClick={handleStop}
                             className="py-3 px-6 text-lg font-semibold rounded-lg bg-red-600 hover:bg-red-700 text-white shadow-md shadow-red-600/50"
@@ -518,10 +575,23 @@ function App() {
                     
                     <button
                         onClick={() => setText('')}
-                        disabled={isSpeaking || isPaused}
+                        disabled={isSpeaking || isPaused || isGeneratingAudio}
                         className="py-3 px-6 text-lg font-semibold rounded-lg bg-slate-700 hover:bg-slate-600 text-dictator-light disabled:opacity-50"
                     >
                         Clear Text
+                    </button>
+                    
+                    {/* New Generate Audio Button */}
+                    <button
+                        onClick={handleGenerateAudio}
+                        disabled={isSpeaking || isPaused || isGeneratingAudio || (!text && !selectedText)}
+                        className={`py-3 px-6 text-lg font-semibold rounded-lg transition duration-200 min-w-[180px] 
+                            ${isGeneratingAudio 
+                                ? 'bg-indigo-800 text-white cursor-not-allowed'
+                                : 'bg-green-600 hover:bg-green-700 text-white shadow-md shadow-green-600/50 disabled:opacity-50'}`
+                        }
+                    >
+                        {isGeneratingAudio ? 'RECORDING (Dictating)' : 'Generate Audio File'}
                     </button>
                 </div>
             </div>
