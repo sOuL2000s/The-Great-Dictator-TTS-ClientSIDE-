@@ -1,32 +1,151 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import DictatorControls from './components/DictatorControls';
+
+// Custom Hook for Local Storage (for settings and text persistence)
+const useLocalStorage = (key, initialValue) => {
+    const [storedValue, setStoredValue] = useState(() => {
+        try {
+            const item = window.localStorage.getItem(key);
+            return item ? JSON.parse(item) : initialValue;
+        } catch (error) {
+            console.error(error);
+            return initialValue;
+        }
+    });
+
+    const setValue = (value) => {
+        try {
+            const valueToStore = value instanceof Function ? value(storedValue) : value;
+            setStoredValue(valueToStore);
+            window.localStorage.setItem(key, JSON.stringify(valueToStore));
+        } catch (error) {
+            console.error(error);
+        }
+    };
+    return [storedValue, setValue];
+};
 
 // Utility function to clean text for dictation
 const cleanText = (rawText) => {
+    if (!rawText) return '';
     let clean = rawText.replace(/<[^>]*>/g, ' ');
     clean = clean.replace(/(\*|_|#|`)+/g, ' ');
     clean = clean.replace(/\s\s+/g, ' ').trim();
     return clean;
 };
 
+// Utility function to tokenize text for synchronized display
+const tokenizeText = (rawText) => {
+    // Splits by whitespace but includes whitespace/delimiters in the output array
+    return rawText.match(/\S+|\s+/g) || [];
+};
+
+const DEFAULT_TEXT = "Greetings, citizen. You have entered the domain of The Great Dictator. Click 'Start Dictation' to begin, or 'Generate Audio File' to capture the speech as a file.";
+
 function App() {
-    const [text, setText] = useState("Greetings, citizen. You have entered the domain of The Great Dictator. Click 'Start Dictation' to begin, or 'Record Audio' to capture the speech as a file.");
+    // Local Storage Persisted States
+    const [text, setText] = useLocalStorage('dictatorText', DEFAULT_TEXT);
+    const [selectedVoice, setSelectedVoice] = useLocalStorage('dictatorVoice', null);
+    const [rate, setRate] = useLocalStorage('dictatorRate', 1.0);
+    const [pitch, setPitch] = useLocalStorage('dictatorPitch', 1.0);
+    const [volume, setVolume] = useLocalStorage('dictatorVolume', 1.0); // New Volume Control
+    const [isControlsOpen, setIsControlsOpen] = useLocalStorage('dictatorControlsOpen', true); // Sidebar state persistence
+    
+    // Runtime States
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [voices, setVoices] = useState([]);
-    const [selectedVoice, setSelectedVoice] = useState(null);
-    const [rate, setRate] = useState(1.0);
-    const [pitch, setPitch] = useState(1.0);
     const [error, setError] = useState(null);
     
-    // New states for recording
-    const [isRecording, setIsRecording] = useState(false);
-    const [audioBlob, setAudioBlob] = useState(null);
-    
-    // Refs for MediaRecorder
-    const mediaRecorderRef = useRef(null);
-    const recordedChunksRef = useRef([]);
+    // States for synchronization and reading selection
+    const [currentCharIndex, setCurrentCharIndex] = useState(-1);
+    const [isPaused, setIsPaused] = useState(false);
+    const [selectedText, setSelectedText] = useState('');
 
     const synth = useMemo(() => window.speechSynthesis, []);
+    
+    // Theme Definitions (using custom and standard Tailwind classes)
+    const THEMES = useMemo(() => ({
+        NEUTRAL: { name: 'Neutral', bg: 'bg-dictator-dark', text: 'text-dictator-light', accent: 'text-dictator-accent', accentBg: 'bg-dictator-accent', headerAccent: 'text-dictator-accent' },
+        AUTHORITY: { name: 'Authority', bg: 'bg-slate-950', text: 'text-gray-200', accent: 'text-cyan-400', accentBg: 'bg-cyan-600', headerAccent: 'text-cyan-400' },
+        ELEGANT: { name: 'Elegant', bg: 'bg-gray-900', text: 'text-white', accent: 'text-purple-400', accentBg: 'bg-purple-600', headerAccent: 'text-purple-400' },
+        MILITARY: { name: 'Military', bg: 'bg-zinc-950', text: 'text-green-300', accent: 'text-green-500', accentBg: 'bg-green-700', headerAccent: 'text-green-400' },
+        PROFESSOR: { name: 'Professor', bg: 'bg-blue-950', text: 'text-blue-200', accent: 'text-yellow-400', accentBg: 'bg-yellow-600', headerAccent: 'text-yellow-400' },
+        SPOOKY: { name: 'Spooky', bg: 'bg-gray-800', text: 'text-red-300', accent: 'text-red-500', accentBg: 'bg-red-700', headerAccent: 'text-red-400' },
+        BRIGHT: { name: 'Bright', bg: 'bg-yellow-950', text: 'text-amber-100', accent: 'text-pink-400', accentBg: 'bg-pink-600', headerAccent: 'text-pink-400' },
+        CALM: { name: 'Calm', bg: 'bg-blue-900', text: 'text-blue-100', accent: 'text-sky-300', accentBg: 'bg-sky-600', headerAccent: 'text-sky-300' },
+        VINTAGE: { name: 'Vintage', bg: 'bg-neutral-800', text: 'text-yellow-50', accent: 'text-orange-400', accentBg: 'bg-orange-600', headerAccent: 'text-orange-400' },
+        DEEP: { name: 'Deep', bg: 'bg-slate-900', text: 'text-fuchsia-200', accent: 'text-fuchsia-400', accentBg: 'bg-fuchsia-600', headerAccent: 'text-fuchsia-400' },
+    }), []);
+    
+    // Helper to normalize strings for comparison
+    const normalize = (str) => str ? str.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
+
+    const currentTheme = useMemo(() => {
+        const voiceObj = voices.find(v => v.name === selectedVoice);
+        
+        if (!voiceObj) return THEMES.NEUTRAL;
+        
+        const lowerName = normalize(voiceObj.name);
+
+        if (lowerName.includes('high') || lowerName.includes('premium') || lowerName.includes('wavenet') || lowerName.includes('google')) {
+             return THEMES.AUTHORITY; 
+        }
+        
+        if (lowerName.includes('female') || lowerName.includes('femenine') || lowerName.includes('alice') || lowerName.includes('samantha')) {
+            return THEMES.ELEGANT;
+        }
+
+        if (lowerName.includes('male') || lowerName.includes('default') || lowerName.includes('microsoft')) {
+            return THEMES.NEUTRAL;
+        }
+
+        if (lowerName.includes('zira') || lowerName.includes('anna') || lowerName.includes('amy') || lowerName.includes('karen')) {
+            return THEMES.CALM;
+        }
+        
+        if (lowerName.includes('alex') || lowerName.includes('daniel')) {
+            return THEMES.DEEP;
+        }
+        
+        if (lowerName.includes('lee') || lowerName.includes('military') || lowerName.includes('commander')) {
+            return THEMES.MILITARY;
+        }
+
+        if (lowerName.includes('veena') || lowerName.includes('susan') || lowerName.includes('professor')) {
+            return THEMES.PROFESSOR;
+        }
+        
+        if (lowerName.includes('chipmunk') || lowerName.includes('ghost') || lowerName.includes('whisper')) {
+            return THEMES.SPOOKY;
+        }
+        
+        if (lowerName.includes('lucy') || lowerName.includes('bright') || lowerName.includes('sun')) {
+            return THEMES.BRIGHT;
+        }
+        
+        if (lowerName.includes('vintage') || lowerName.includes('old')) {
+            return THEMES.VINTAGE;
+        }
+
+
+        return THEMES.NEUTRAL;
+    }, [selectedVoice, voices, THEMES]);
+
+    const handlePause = () => {
+        if (synth && synth.speaking && !synth.paused) {
+            synth.pause();
+            setIsPaused(true);
+            setIsSpeaking(false); 
+        }
+    };
+
+    const handleResume = () => {
+        if (synth && synth.paused) {
+            synth.resume();
+            setIsPaused(false);
+            setIsSpeaking(true); 
+        }
+    };
 
     // --- Voice Loading (Same as before) ---
     const loadVoices = useCallback(() => {
@@ -36,8 +155,22 @@ function App() {
             const defaultVoice = availableVoices.find(v => v.lang.startsWith('en')) || availableVoices[0];
             setSelectedVoice(defaultVoice ? defaultVoice.name : null);
         }
-    }, [synth, selectedVoice]);
+    }, [synth, selectedVoice, setSelectedVoice]);
 
+    // Error clearing effect
+    useEffect(() => {
+        // Automatically clear non-critical errors after 5 seconds
+        if (error) {
+            const errorTimeout = setTimeout(() => {
+                // Do not clear the API not supported error
+                if (!error.includes("not supported")) {
+                    setError(null);
+                }
+            }, 5000);
+            return () => clearTimeout(errorTimeout);
+        }
+    }, [error]);
+    
     useEffect(() => {
         if (synth) {
             synth.onvoiceschanged = loadVoices;
@@ -56,41 +189,52 @@ function App() {
         }
     }, [loadVoices, synth]);
 
-    // --- Core Dictation Logic (Modified for Recording) ---
+    // --- Core Dictation Logic (Modified for Recording and Pause/Resume) ---
 
     const handleSpeak = () => {
-        if (!synth || !text) return;
+        if (synth && synth.paused) {
+            handleResume();
+            return;
+        }
+
+        const textToUse = selectedText || text;
+        if (!synth || !textToUse) return;
         
-        synth.cancel();
+        synth.cancel(); // Cancel previous speech if not paused
 
         const voiceObj = voices.find(v => v.name === selectedVoice);
         if (!voiceObj) return setError("Selected voice not found.");
 
-        const utteranceText = cleanText(text);
+        // We use the cleaned version for the utterance itself
+        const utteranceText = cleanText(textToUse);
 
         const utterance = new SpeechSynthesisUtterance(utteranceText);
         utterance.voice = voiceObj;
         utterance.rate = rate;
         utterance.pitch = pitch;
+        utterance.volume = volume; // Apply volume setting
 
         utterance.onstart = () => {
             setIsSpeaking(true);
-            if (isRecording) {
-                // If recording is active, start MediaRecorder here (see handleRecord implementation)
-            }
+            setCurrentCharIndex(0);
         };
         
+        utterance.onboundary = (event) => {
+            if (event.name === 'word') {
+                // event.charIndex is relative to the cleaned utteranceText
+                setCurrentCharIndex(event.charIndex);
+            }
+        };
+
         utterance.onend = () => {
             setIsSpeaking(false);
-            if (isRecording) {
-                // If recording is active, stop MediaRecorder here
-                handleStopRecording();
-            }
+            setCurrentCharIndex(-1); // Reset index
         };
         
         utterance.onerror = (event) => {
             setError(`Speech Error: ${event.error}`);
             setIsSpeaking(false);
+            setCurrentCharIndex(-1);
         };
 
         synth.speak(utterance);
@@ -100,78 +244,31 @@ function App() {
         if (synth) {
             synth.cancel();
             setIsSpeaking(false);
-        }
-        if (isRecording) {
-            handleStopRecording();
-        }
-    };
-
-    // --- Audio Recording Logic ---
-
-    // NOTE: This function attempts to get a stream that includes system audio. 
-    // This is NOT reliably supported by all browsers for security reasons (often requires user permission 
-    // to record the SCREEN or MICROPHONE, even though we want speaker output).
-    const startRecording = async () => {
-        // 1. Reset
-        setAudioBlob(null);
-        recordedChunksRef.current = [];
-        
-        try {
-            // Attempt to capture the audio output stream (system audio)
-            // This is the least reliable part of the whole application.
-            const stream = await navigator.mediaDevices.getDisplayMedia({
-                audio: true, // Requires screen sharing permission
-                video: false,
-            });
-
-            mediaRecorderRef.current = new MediaRecorder(stream, { 
-                mimeType: 'audio/webm' 
-            });
-
-            mediaRecorderRef.current.ondataavailable = (event) => {
-                if (event.data.size > 0) {
-                    recordedChunksRef.current.push(event.data);
-                }
-            };
-
-            mediaRecorderRef.current.onstop = () => {
-                const mimeType = mediaRecorderRef.current.mimeType;
-                const blob = new Blob(recordedChunksRef.current, { type: mimeType });
-                setAudioBlob(blob);
-                setIsRecording(false);
-                // Stop the captured stream tracks
-                stream.getTracks().forEach(track => track.stop());
-            };
-
-            mediaRecorderRef.current.start();
-            setIsRecording(true);
-            
-            // Immediately start dictation after recorder is ready
-            handleSpeak(); 
-
-        } catch (err) {
-            console.error("Recording failed. Browser may not support capturing system audio output.", err);
-            setError("Recording failed. Check console for details. (Likely requires screen/mic permission or is unsupported)");
-            setIsRecording(false);
-        }
-    };
-
-    const handleStopRecording = () => {
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-            mediaRecorderRef.current.stop();
+            setIsPaused(false); // Reset pause state
         }
     };
     
-    const handleDownload = () => {
-        if (audioBlob) {
-            const url = URL.createObjectURL(audioBlob);
-            const a = document.createElement('a');
-            a.style.display = 'none';
-            a.href = url;
-            a.download = `dictation_${Date.now()}.webm`; // WEBM is the standard output format
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
+    const handleClearData = () => {
+        if (window.confirm("Are you sure you want to clear all saved text, settings, and local storage data?")) {
+            localStorage.removeItem('dictatorText');
+            localStorage.removeItem('dictatorVoice');
+            localStorage.removeItem('dictatorRate');
+            localStorage.removeItem('dictatorPitch');
+            localStorage.removeItem('dictatorVolume');
+            localStorage.removeItem('dictatorControlsOpen');
+            
+            // Reset React states to defaults
+            setText(DEFAULT_TEXT);
+            setSelectedVoice(null);
+            setRate(1.0);
+            setPitch(1.0);
+            setVolume(1.0);
+            setIsControlsOpen(true);
+            setError(null);
+            
+            // Force re-load voices to ensure selectedVoice logic re-runs if needed
+            loadVoices(); 
+            alert("All local settings and data cleared.");
         }
     };
 
@@ -184,10 +281,91 @@ function App() {
         reader.readAsText(file);
     };
 
+    // --- Memoized Indexing for Highlighting ---
+    const textToHighlight = selectedText || text;
+    
+    // Helper to extract plain color class name from a bg class (e.g., 'bg-cyan-600' -> 'cyan-600')
+    const accentClass = currentTheme.accentBg.replace('bg-', '');
+
+    const tokenData = useMemo(() => {
+        if (!textToHighlight) return [];
+        const rawTokens = tokenizeText(textToHighlight);
+        
+        let visualTokens = []; 
+        let currentCleanIndex = 0;
+
+        for (const token of rawTokens) {
+            const isWord = /\S/.test(token);
+            const cleanedToken = isWord ? cleanText(token) : '';
+
+            visualTokens.push({
+                token, 
+                isWord, 
+                cleanIndexStart: currentCleanIndex,
+                cleanLength: cleanedToken.length
+            });
+
+            if (isWord && cleanedToken.length > 0) {
+                // Advance index by cleaned word length + 1 space separator (standard TTS behavior)
+                currentCleanIndex += cleanedToken.length + 1; 
+            }
+        }
+        return visualTokens;
+    }, [textToHighlight]);
+
+
     return (
-        <div className="flex h-screen bg-dictator-dark text-dictator-light">
+        // Apply dynamic background and text color based on theme
+        <div className={`flex h-screen ${currentTheme.bg} ${currentTheme.text} overflow-hidden relative`}>
+            
             {/* Sidebar Controls */}
-            <div className="w-1/4 min-w-[300px] border-r border-slate-700">
+            
+            {/* 1. Desktop Sidebar (Relative, Width controlled by the wrapper) */}
+            <div 
+                className={`hidden md:flex flex-shrink-0 h-full z-10 relative 
+                           transition-all duration-300 ease-in-out 
+                           ${currentTheme.bg} border-r border-slate-700 
+                           ${isControlsOpen ? 'w-1/4 min-w-[300px] max-w-sm' : 'w-12'}`}
+            >
+                <div className={`h-full ${isControlsOpen ? 'w-full' : 'hidden'} overflow-y-auto`}>
+                    <DictatorControls
+                        voices={voices}
+                        selectedVoice={selectedVoice}
+                        onVoiceChange={setSelectedVoice}
+                        rate={rate}
+                        onRateChange={setRate}
+                        pitch={pitch}
+                        onPitchChange={setPitch}
+                        volume={volume}
+                        onVolumeChange={setVolume}
+                        onFileChange={handleFileChange}
+                        onClearData={handleClearData}
+                        theme={currentTheme} // Pass theme for component styling
+                    />
+                </div>
+                
+                {/* Desktop Toggle Button */}
+                <button
+                    onClick={() => setIsControlsOpen(prev => !prev)}
+                    // Position adjusted to be relative to the sidebar itself
+                    className={`absolute top-4 ${isControlsOpen ? '-right-4' : 'right-0'} 
+                                p-2 ${currentTheme.accentBg} hover:opacity-90 text-white rounded-full shadow-lg transition-all duration-300 z-30 hidden md:block`}
+                    aria-label={isControlsOpen ? "Collapse Controls" : "Expand Controls"}
+                >
+                    {isControlsOpen ? (
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path></svg>
+                    ) : (
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"></path></svg>
+                    )}
+                </button>
+            </div>
+            
+            {/* 2. Mobile Sidebar (Fixed Overlay) */}
+            <div 
+                className={`fixed top-0 left-0 w-[300px] h-full z-30 transition-transform duration-300 ease-in-out 
+                           ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'} 
+                           ${currentTheme.bg} shadow-2xl md:hidden`}
+            >
                 <DictatorControls
                     voices={voices}
                     selectedVoice={selectedVoice}
@@ -196,15 +374,46 @@ function App() {
                     onRateChange={setRate}
                     pitch={pitch}
                     onPitchChange={setPitch}
+                    volume={volume}
+                    onVolumeChange={setVolume}
                     onFileChange={handleFileChange}
+                    onClearData={handleClearData}
+                    theme={currentTheme}
                 />
+                {/* Mobile Close Button (inside the sidebar) */}
+                <button
+                    onClick={() => setIsControlsOpen(false)}
+                    className={`absolute top-4 right-4 p-2 ${currentTheme.accentBg} hover:opacity-90 text-white rounded-full shadow-lg transition-all duration-300 z-40`}
+                    aria-label="Collapse Controls"
+                >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path></svg>
+                </button>
             </div>
+            
+            {/* Mobile Overlay */}
+            {isControlsOpen && (
+                <div 
+                    className="fixed inset-0 bg-black/50 z-20 md:hidden"
+                    onClick={() => setIsControlsOpen(false)}
+                ></div>
+            )}
+            
+            {/* Floating Toggle Button for Mobile (Always visible outside the fixed sidebar) */}
+            {!isControlsOpen && (
+                <button
+                    onClick={() => setIsControlsOpen(true)}
+                    className={`fixed top-4 left-4 p-2 ${currentTheme.accentBg} hover:opacity-90 text-white rounded-full shadow-lg transition-all duration-300 z-40 md:hidden`}
+                    aria-label="Expand Controls"
+                >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                </button>
+            )}
 
             {/* Main Dictation Area */}
-            <div className="flex-1 flex flex-col p-8">
-                <header className="mb-6">
-                    <h1 className="text-5xl font-extrabold text-dictator-accent">The Great Dictator</h1>
-                    <p className="text-md text-slate-400 mt-1">Commanding clarity, one word at a time.</p>
+            <div className="flex-1 flex flex-col p-4 md:p-8 overflow-y-auto relative">
+                <header className="mb-4 md:mb-6">
+                    <h1 className={`text-4xl md:text-5xl font-extrabold ${currentTheme.headerAccent}`}>The Great Dictator</h1>
+                    <p className="text-sm md:text-md text-slate-400 mt-1">Commanding clarity, one word at a time.</p>
                 </header>
 
                 {error && (
@@ -213,66 +422,108 @@ function App() {
                     </div>
                 )}
 
-                {/* Text Input Area */}
-                <textarea
-                    className="flex-1 w-full p-4 text-lg bg-slate-800 rounded-lg border-2 border-slate-700 focus:border-dictator-accent transition duration-200 resize-none font-mono"
-                    placeholder="Enter the text to be dictated..."
-                    value={text}
-                    onChange={(e) => setText(e.target.value)}
-                />
+                {/* Text Display/Input Area */}
+                
+                {isSpeaking ? (
+                    // 1. Highlighted Text Display (Read-only)
+                    <div 
+                        className="flex-1 w-full p-4 text-lg bg-slate-800 rounded-lg border-2 border-slate-700 overflow-y-auto font-mono text-left select-none"
+                        style={{ whiteSpace: 'pre-wrap' }}
+                    >
+                        {tokenData.map((item, mapIndex) => {
+                            let highlightClass = '';
+                            if (item.isWord && currentCharIndex > -1) {
+                                const start = item.cleanIndexStart;
+                                const end = item.cleanIndexStart + item.cleanLength;
+                                
+                                // Check if currentCharIndex falls within the boundary of the current word
+                                if (currentCharIndex >= start && currentCharIndex < end) {
+                                    // Use dynamic accent color for highlighting. Added underline/emphasis for beauty.
+                                    highlightClass = `text-white rounded px-0.5 font-semibold underline decoration-wavy decoration-${accentClass} decoration-2 bg-${accentClass}/30`;
+                                }
+                            }
+                            
+                            return (
+                                <span 
+                                    key={mapIndex} 
+                                    className={highlightClass}
+                                >
+                                    {item.token}
+                                </span>
+                            );
+                        })}
+                    </div>
+                ) : (
+                    // 2. Editable Text Input
+                    <textarea
+                        className={`flex-1 w-full p-4 text-lg bg-slate-800 rounded-lg border-2 border-slate-700 focus:border-${currentTheme.accentBg.replace('bg-', '')} transition duration-200 resize-none font-mono text-left`}
+                        placeholder="Enter the text to be dictated..."
+                        value={text}
+                        onChange={(e) => {
+                            setText(e.target.value);
+                            setSelectedText(''); // Clear selection on edit
+                        }}
+                        onMouseUp={(e) => {
+                            // Logic to detect selected text
+                            const textarea = e.target;
+                            const start = textarea.selectionStart;
+                            const end = textarea.selectionEnd;
+                            
+                            if (start !== end) {
+                                const selected = text.substring(start, end);
+                                setSelectedText(selected);
+                            } else {
+                                setSelectedText('');
+                            }
+                        }}
+                    />
+                )}
+                
+                {/* Status Message for Selection */}
+                {selectedText && !isSpeaking && (
+                    <p className='mt-2 text-sm text-slate-400'>
+                        Selected text ready for dictation: <span className='font-semibold text-dictator-light italic'>
+                            "{selectedText.length > 80 ? selectedText.substring(0, 80) + '...' : selectedText}"
+                        </span>
+                    </p>
+                )}
 
                 {/* Action Buttons */}
-                <div className="mt-6 flex space-x-4 items-center">
+                <div className="mt-6 flex flex-wrap gap-4 items-center">
                     
-                    {/* Speak / Stop Button */}
+                    {/* Speak / Pause / Resume Button */}
                     <button
-                        onClick={isSpeaking ? handleStop : handleSpeak}
-                        disabled={!selectedVoice || !text || isRecording}
-                        className={`py-3 px-8 text-xl font-bold rounded-lg transition duration-200 
+                        onClick={isSpeaking ? handlePause : handleSpeak}
+                        disabled={!selectedVoice || (!text && !synth.paused)}
+                        className={`py-3 px-8 text-xl font-bold rounded-lg transition duration-200 min-w-[180px] 
                             ${isSpeaking 
-                                ? 'bg-yellow-600 hover:bg-yellow-700 text-white' 
-                                : 'bg-dictator-accent hover:bg-rose-700 text-white'}`
+                                ? 'bg-yellow-600 hover:bg-yellow-700 text-white shadow-lg shadow-yellow-600/50' 
+                                : isPaused
+                                    ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/50' // Resume color
+                                    : `${currentTheme.accentBg} hover:opacity-90 text-white shadow-lg shadow-rose-600/50`}`
                         }
                     >
-                        {isSpeaking ? 'STOP DICTATION' : 'START DICTATION'}
-                    </button>
-                    
-                    {/* Record Button */}
-                    <button
-                        onClick={startRecording}
-                        disabled={!selectedVoice || !text || isSpeaking || isRecording}
-                        className={`py-3 px-6 text-lg font-semibold rounded-lg transition duration-200 
-                            ${isRecording 
-                                ? 'bg-orange-500 text-white animate-pulse' 
-                                : 'bg-green-600 hover:bg-green-700 text-white'}`
-                        }
-                    >
-                        {isRecording ? 'RECORDING...' : 'Record Audio'}
+                        {isSpeaking ? 'PAUSE' : (isPaused ? 'RESUME DICTATION' : 'START DICTATION')}
                     </button>
 
-                    {/* Download Button */}
-                    {audioBlob && (
+                    {/* Stop Button (appears when speaking or paused) */}
+                    {(isSpeaking || isPaused) && (
                         <button
-                            onClick={handleDownload}
-                            className="py-3 px-6 text-lg font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white"
+                            onClick={handleStop}
+                            className="py-3 px-6 text-lg font-semibold rounded-lg bg-red-600 hover:bg-red-700 text-white shadow-md shadow-red-600/50"
                         >
-                            Download WEBM
+                            STOP
                         </button>
                     )}
                     
                     <button
                         onClick={() => setText('')}
-                        className="py-3 px-6 text-lg font-semibold rounded-lg bg-slate-700 hover:bg-slate-600 text-dictator-light"
+                        disabled={isSpeaking || isPaused}
+                        className="py-3 px-6 text-lg font-semibold rounded-lg bg-slate-700 hover:bg-slate-600 text-dictator-light disabled:opacity-50"
                     >
-                        Clear
+                        Clear Text
                     </button>
                 </div>
-                
-                {isRecording && (
-                    <p className='mt-2 text-sm text-orange-400'>
-                        Recording is active. Do not click 'Stop Dictation' unless the speech is finished.
-                    </p>
-                )}
             </div>
         </div>
     );

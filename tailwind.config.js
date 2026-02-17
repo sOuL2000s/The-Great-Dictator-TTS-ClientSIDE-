@@ -13,5 +13,13 @@ export default {
       }
     },
   },
+  // Safelist classes used dynamically in App.jsx for theme switching
+  safelist: [
+    // Covers multiple color sets for dynamic theme switching:
+    { 
+      pattern: /(bg|text|focus:border|accent)-(slate|gray|cyan|purple|dictator|zinc|green|blue|yellow|amber|pink|sky|neutral|fuchsia|orange)-(950|900|800|700|600|500|400|300|200|100|50|light|accent)/, 
+      variants: ['focus'] 
+    },
+  ],
   plugins: [],
 }
