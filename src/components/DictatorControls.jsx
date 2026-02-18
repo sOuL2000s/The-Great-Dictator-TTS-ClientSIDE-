@@ -46,7 +46,7 @@ const DictatorControls = ({
                     {isDarkMode ? (
                         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path></svg> // Moon icon
                     ) : (
-                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.459 4.363A9.962 9.962 0 0110 18c-3.739 0-6.768-2.656-7.465-6.248-.047-.37.02-.746.155-1.111L2.247 9.87c.306-.985.46-2.028.46-3.111C2.707 5.772 3 5 3 5l.001-.001C3.411 3.568 4.227 2.625 5.25 2c.582-.365 1.155-.724 1.713-1.077l.192-.119A1 1 0 018 1.054V2a1 1 0 01-1 1H5.973A8.003 8.003 0 001.036 10c0 4.485 3.597 8.163 8.04 8.971C10 19 10 19 10 19c.143 0 .285-.003.427-.009.68-.028 1.348-.133 1.996-.32A1 1 0 0113 18v-.001l-.001-.001a1 1 0 01-.192-.119c-.58-.358-1.15-.723-1.71-.977l-.159-.074a1 1 0 01-.274-.187L11.5 15.637zM15 10a1 1 0 011-1h1a1 1 0 110 2h-1a1 1 0 01-1-1z" clipRule="evenodd"></path></svg> // Sun icon
+                        <svg className="w-5 h-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg> // Sun icon (Standard simplified sun/rays)
                     )}
                 </button>
             </div>
