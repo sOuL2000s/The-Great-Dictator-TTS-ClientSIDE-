@@ -7,18 +7,20 @@ export default {
   theme: {
     extend: {
       colors: {
-        'dictator-dark': '#0f172a', // dark mode background (slate-900)
-        'dictator-accent': '#e11d48', // accent color (rose-600)
-        'dictator-light': '#f1f5f9', // light mode background (slate-100)
+        'dictator-dark': '#0b0f19', 
+        'dictator-sidebar': '#0f172a',
+        'dictator-accent': '#e11d48', // Rose-600 primary
+        'dictator-accent-hover': '#be123c',
+        'dictator-light': '#f8fafc',
+        'dictator-secondary': '#64748b',
       }
     },
   },
   // Safelist classes used dynamically in App.jsx for theme switching
   safelist: [
-    // Covers multiple color sets for dynamic theme switching and dark/light modes:
     { 
-      pattern: /(bg|text|focus:border|accent|file:bg|hover:bg|border)-(slate|gray|cyan|purple|dictator|zinc|green|blue|yellow|amber|pink|sky|neutral|fuchsia|orange|white|black)-(950|900|800|700|600|500|400|300|200|100|50|light|dark|accent)/, 
-      variants: ['focus', 'hover'] 
+      pattern: /(bg|text|focus:border|accent|file:bg|hover:bg|border|decoration|ring)-(slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|dictator)-(950|900|800|700|600|500|400|300|200|100|50|light|dark|accent|success|danger|sidebar|secondary)/, 
+      variants: ['focus', 'hover', 'active', 'group-hover'] 
     },
   ],
   plugins: [],

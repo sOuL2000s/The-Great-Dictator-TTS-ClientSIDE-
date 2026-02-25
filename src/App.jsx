@@ -78,47 +78,51 @@ function App() {
 
     // Theme Definitions: Voice-based accent themes
     const VOICE_ACCENT_THEMES = useMemo(() => ({
-        NEUTRAL: { accent: 'text-dictator-accent', accentBg: 'bg-dictator-accent', headerAccent: 'text-dictator-accent' },
-        AUTHORITY: { accent: 'text-cyan-400', accentBg: 'bg-cyan-600', headerAccent: 'text-cyan-400' },
-        ELEGANT: { accent: 'text-purple-400', accentBg: 'bg-purple-600', headerAccent: 'text-purple-400' },
-        MILITARY: { accent: 'text-green-500', accentBg: 'bg-green-700', headerAccent: 'text-green-400' },
-        PROFESSOR: { accent: 'text-yellow-400', accentBg: 'bg-yellow-600', headerAccent: 'text-yellow-400' },
-        SPOOKY: { accent: 'text-red-500', accentBg: 'bg-red-700', headerAccent: 'text-red-400' },
-        BRIGHT: { accent: 'text-pink-400', accentBg: 'bg-pink-600', headerAccent: 'text-pink-400' },
-        CALM: { accent: 'text-sky-300', accentBg: 'bg-sky-600', headerAccent: 'text-sky-300' },
-        VINTAGE: { accent: 'text-orange-400', accentBg: 'bg-orange-600', headerAccent: 'text-orange-400' },
-        DEEP: { accent: 'text-fuchsia-400', accentBg: 'bg-fuchsia-600', headerAccent: 'text-fuchsia-400' },
+        NEUTRAL: { accent: 'text-rose-500', accentBg: 'bg-rose-600' },
+        AUTHORITY: { accent: 'text-rose-400', accentBg: 'bg-rose-700' },
+        ELEGANT: { accent: 'text-rose-300', accentBg: 'bg-rose-600' },
+        MILITARY: { accent: 'text-rose-500', accentBg: 'bg-rose-800' },
+        PROFESSOR: { accent: 'text-rose-400', accentBg: 'bg-rose-500' },
+        SPOOKY: { accent: 'text-rose-600', accentBg: 'bg-rose-900' },
+        BRIGHT: { accent: 'text-rose-400', accentBg: 'bg-rose-500' },
+        CALM: { accent: 'text-rose-300', accentBg: 'bg-rose-400' },
+        VINTAGE: { accent: 'text-rose-500', accentBg: 'bg-rose-700' },
+        DEEP: { accent: 'text-rose-400', accentBg: 'bg-rose-800' },
     }), []);
 
     // Base themes for dark/light mode
     const BASE_MODE_THEMES = useMemo(() => ({
         dark: {
             bg: 'bg-dictator-dark',
-            sidebarBg: 'bg-dictator-dark',
-            text: 'text-dictator-light',
-            inputBg: 'bg-slate-800',
-            inputBorder: 'border-slate-700',
-            infoText: 'text-slate-400',
+            sidebarBg: 'bg-dictator-sidebar',
+            sidebarBorder: 'border-rose-600/20',
+            text: 'text-slate-200',
+            inputBg: 'bg-[#0f172a]/80',
+            inputBorder: 'border-slate-800',
+            infoText: 'text-slate-500',
             highlightText: 'text-white',
-            buttonSecondaryBg: 'bg-slate-700',
-            buttonSecondaryHover: 'hover:bg-slate-600',
-            buttonSecondaryText: 'text-dictator-light',
-            headerBorder: 'border-slate-700',
-            logoBg: 'bg-slate-800' // For file input
+            buttonSecondaryBg: 'bg-transparent',
+            buttonSecondaryHover: 'hover:bg-slate-800/50',
+            buttonSecondaryText: 'text-slate-400',
+            headerBorder: 'border-slate-800/50',
+            logoBg: 'bg-slate-900',
+            shadow: 'shadow-2xl shadow-rose-900/10'
         },
         light: {
-            bg: 'bg-dictator-light',
-            sidebarBg: 'bg-gray-100',
-            text: 'text-dictator-dark',
+            bg: 'bg-[#f8fafc]',
+            sidebarBg: 'bg-white',
+            sidebarBorder: 'border-slate-200',
+            text: 'text-slate-900',
             inputBg: 'bg-white',
-            inputBorder: 'border-gray-300',
-            infoText: 'text-gray-600',
-            highlightText: 'text-gray-900',
-            buttonSecondaryBg: 'bg-gray-200',
-            buttonSecondaryHover: 'hover:bg-gray-300',
-            buttonSecondaryText: 'text-slate-800',
-            headerBorder: 'border-gray-300',
-            logoBg: 'bg-gray-50' // For file input
+            inputBorder: 'border-slate-200',
+            infoText: 'text-slate-500',
+            highlightText: 'text-slate-950',
+            buttonSecondaryBg: 'bg-transparent',
+            buttonSecondaryHover: 'hover:bg-slate-100',
+            buttonSecondaryText: 'text-slate-600',
+            headerBorder: 'border-slate-200',
+            logoBg: 'bg-white',
+            shadow: 'shadow-lg shadow-black/5'
         }
     }), []);
 
@@ -190,9 +194,10 @@ function App() {
     useEffect(() => {
         // Only attempt to scroll if speaking, we have a valid index (> -1), and both refs are present
         if (isSpeaking && currentCharIndex > -1 && highlightedWordRef.current && textDisplayRef.current) {
+            // Use 'auto' behavior instead of 'smooth' when dictating to prevent lag at high speeds
             highlightedWordRef.current.scrollIntoView({
-                behavior: 'smooth',
-                block: 'nearest', // Ensures the element is visible without jumping too far
+                behavior: 'auto', 
+                block: 'center',
                 inline: 'nearest'
             });
         }
@@ -366,34 +371,30 @@ function App() {
     };
 
     // --- Memoized Indexing for Highlighting ---
-    const textToHighlight = selectedText || text;
+    // Ensure we are tokenizing the EXACT text that is being sent to the speech engine
+    const textToSpeak = useMemo(() => cleanText(selectedText || text), [selectedText, text]);
     
-    const accentClass = currentTheme.accentBg.replace('bg-', '');
-
     const tokenData = useMemo(() => {
-        if (!textToHighlight) return [];
-        const rawTokens = tokenizeText(textToHighlight);
+        if (!textToSpeak) return [];
+        const rawTokens = tokenizeText(textToSpeak);
         
         let visualTokens = []; 
-        let currentCleanIndex = 0;
+        let currentIdx = 0;
 
         for (const token of rawTokens) {
             const isWord = /\S/.test(token);
-            const cleanedToken = isWord ? cleanText(token) : '';
-
+            
             visualTokens.push({
                 token, 
                 isWord, 
-                cleanIndexStart: currentCleanIndex,
-                cleanLength: cleanedToken.length
+                indexStart: currentIdx,
+                indexEnd: currentIdx + token.length
             });
 
-            if (isWord && cleanedToken.length > 0) {
-                currentCleanIndex += cleanedToken.length + 1; 
-            }
+            currentIdx += token.length;
         }
         return visualTokens;
-    }, [textToHighlight]);
+    }, [textToSpeak]);
 
 
     return (
@@ -405,8 +406,10 @@ function App() {
             <div 
                 className={`hidden md:flex flex-shrink-0 h-full z-10 relative 
                            transition-all duration-300 ease-in-out 
-                           ${currentTheme.sidebarBg} border-r ${currentTheme.headerBorder} 
+                           ${currentTheme.sidebarBg} border-r ${isDarkMode ? 'border-rose-600/10' : 'border-slate-200'} 
+                           ${isDarkMode ? 'shadow-[4px_0_24px_rgba(0,0,0,0.3)]' : 'shadow-[4px_0_20px_rgba(0,0,0,0.04)]'}
                            ${isControlsOpen ? 'w-1/4 min-w-[300px] max-w-sm' : 'w-12'}`}
+                style={isControlsOpen ? { borderRight: `3px solid ${isDarkMode ? '#E11D4822' : '#DC262611'}` } : {}}
             >
                 <div className={`h-full ${isControlsOpen ? 'w-full' : 'hidden'} overflow-y-auto`}>
                     <DictatorControls
@@ -494,147 +497,159 @@ function App() {
             )}
 
             {/* Main Dictation Area */}
-            <div className="flex-1 flex flex-col p-4 md:p-8 overflow-y-auto relative">
-                <header className="mb-4 md:mb-6 flex justify-between items-center flex-wrap gap-2">
+            <div className="flex-1 flex flex-col p-6 md:p-12 relative max-w-5xl mx-auto w-full h-full overflow-hidden">
+                <header className={`flex-shrink-0 mb-8 md:mb-12 flex justify-between items-end flex-wrap gap-4 border-b ${currentTheme.headerBorder} pb-6`}>
                     <div>
-                        <h1 className={`text-4xl md:text-5xl font-extrabold ${currentTheme.headerAccent}`}>The Great Dictator</h1>
-                        <p className={`text-sm md:text-md ${currentTheme.infoText} mt-1`}>Commanding clarity, one word at a time.</p>
+                        <h1 className={`text-3xl md:text-4xl font-bold tracking-tight`}>
+                            The Great <span className="text-rose-600">Dictator</span>
+                        </h1>
+                        <p className={`text-sm md:text-base ${currentTheme.infoText} mt-2`}>Commanding clarity, one word at a time.</p>
                     </div>
-                    {/* New: Online Status Indicator */}
-                    <div className={`flex items-center text-sm font-medium p-2 rounded-lg 
-                                    ${isOnline ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>
-                        <span className="mr-2">
-                            {isOnline ? (
-                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"></path></svg>
-                            ) : (
-                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd"></path></svg>
-                            )}
-                        </span>
-                        {isOnline ? 'Online' : 'Offline'}
+                    {/* Online Status Indicator */}
+                    <div className={`flex items-center text-xs font-semibold px-3 py-1.5 rounded-full border ${currentTheme.headerBorder} backdrop-blur-sm
+                                    ${isOnline ? 'text-emerald-500 bg-emerald-500/5' : 'text-rose-500 bg-rose-500/5'}`}>
+                        <span className={`w-2 h-2 rounded-full mr-2 ${isOnline ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]' : 'bg-rose-500 shadow-[0_0_8px_rgba(225,29,72,0.4)]'}`}></span>
+                        {isOnline ? 'SYSTEM ONLINE' : 'SYSTEM OFFLINE'}
                     </div>
                 </header>
 
                 {error && (
-                    <div className="bg-red-900 p-3 rounded mb-4 border border-red-600">
-                        ERROR: {error}
+                    <div className="flex-shrink-0 bg-rose-500/10 text-rose-400 p-4 rounded-xl mb-6 border border-rose-500/20 backdrop-blur-md flex items-start">
+                        <svg className="w-5 h-5 mr-3 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <span className="text-sm font-medium">{error}</span>
                     </div>
                 )}
 
                 {/* Text Display/Input Area */}
                 
-                {isSpeaking ? (
-                    // 1. Highlighted Text Display (Read-only)
-                    <div 
-                        ref={textDisplayRef}
-                        className={`flex-1 w-full p-4 text-lg ${currentTheme.inputBg} rounded-lg border-2 ${currentTheme.inputBorder} overflow-y-auto font-mono text-left select-none`}
-                        style={{ whiteSpace: 'pre-wrap' }}
-                    >
-                        {tokenData.map((item, mapIndex) => {
-                            let highlightClass = '';
-                            let isCurrentWord = false;
-                            
-                            if (item.isWord && currentCharIndex > -1) {
-                                const start = item.cleanIndexStart;
-                                const end = item.cleanIndexStart + item.cleanLength;
+                <div className="flex-1 relative group min-h-0">
+                    {isSpeaking ? (
+                        // 1. Highlighted Text Display (Read-only)
+                        <div 
+                            ref={textDisplayRef}
+                            className={`h-full w-full p-6 md:p-8 text-lg md:text-xl ${currentTheme.inputBg} rounded-2xl border ${currentTheme.inputBorder} overflow-y-auto font-sans leading-relaxed text-left select-none backdrop-blur-sm transition-all duration-300 shadow-xl shadow-black/20`}
+                            style={{ whiteSpace: 'pre-wrap' }}
+                        >
+                            {tokenData.map((item, mapIndex) => {
+                                // Remove CSS transition during dictation to prevent visual lag
+                                let highlightClass = '';
+                                let isCurrentWord = false;
                                 
-                                if (currentCharIndex >= start && currentCharIndex < end) {
-                                    isCurrentWord = true;
-                                    highlightClass = `${currentTheme.highlightText} rounded px-0.5 font-semibold underline decoration-wavy decoration-${accentClass} decoration-2 bg-${accentClass}/30`;
+                                if (item.isWord && currentCharIndex > -1) {
+                                    if (currentCharIndex >= item.indexStart && currentCharIndex < item.indexEnd) {
+                                        isCurrentWord = true;
+                                        highlightClass = `text-white rounded-md px-1 py-0.5 font-semibold bg-rose-600 shadow-[0_0_15px_rgba(225,29,72,0.4)] ring-2 ring-rose-500/20`;
+                                    }
                                 }
-                            }
-                            
-                            return (
-                                <span 
-                                    key={mapIndex} 
-                                    className={highlightClass}
-                                    ref={isCurrentWord ? highlightedWordRef : null}
-                                >
-                                    {item.token}
-                                </span>
-                            );
-                        })}
-                    </div>
-                ) : (
-                    // 2. Editable Text Input
-                    <textarea
-                        className={`flex-1 w-full p-4 text-lg ${currentTheme.inputBg} rounded-lg border-2 ${currentTheme.inputBorder} focus:border-${accentClass} transition duration-200 resize-none font-mono text-left`}
-                        placeholder="Enter the text to be dictated..."
-                        value={text}
-                        onChange={(e) => {
-                            setText(e.target.value);
-                            setSelectedText(''); // Clear selection on edit
-                        }}
-                        onMouseUp={(e) => {
-                            const textarea = e.target;
-                            const start = textarea.selectionStart;
-                            const end = textarea.selectionEnd;
-                            
-                            if (start !== end) {
-                                const selected = text.substring(start, end);
-                                setSelectedText(selected);
-                            } else {
-                                setSelectedText('');
-                            }
-                        }}
-                    />
-                )}
+                                
+                                return (
+                                    <span 
+                                        key={mapIndex} 
+                                        className={highlightClass}
+                                        ref={isCurrentWord ? highlightedWordRef : null}
+                                    >
+                                        {item.token}
+                                    </span>
+                                );
+                            })}
+                        </div>
+                    ) : (
+                        // 2. Editable Text Input
+                        <textarea
+                            className={`h-full w-full p-6 md:p-8 text-lg md:text-xl ${currentTheme.inputBg} rounded-2xl border ${currentTheme.inputBorder} focus:border-rose-600/30 focus:ring-4 focus:ring-rose-600/5 transition-all duration-300 resize-none font-sans leading-relaxed text-left outline-none ${currentTheme.shadow}`}
+                            placeholder="Enter the text to be dictated..."
+                            value={text}
+                            onChange={(e) => {
+                                setText(e.target.value);
+                                setSelectedText(''); // Clear selection on edit
+                            }}
+                            onMouseUp={(e) => {
+                                const textarea = e.target;
+                                const start = textarea.selectionStart;
+                                const end = textarea.selectionEnd;
+                                
+                                if (start !== end) {
+                                    const selected = text.substring(start, end);
+                                    setSelectedText(selected);
+                                } else {
+                                    setSelectedText('');
+                                }
+                            }}
+                        />
+                    )}
+                </div>
                 
                 {/* Status Message for Selection */}
                 {selectedText && !isSpeaking && (
-                    <p className={`mt-2 text-sm ${currentTheme.infoText}`}>
-                        Selected text ready for dictation: <span className={`font-semibold ${currentTheme.highlightText} italic`}>
-                            "{selectedText.length > 80 ? selectedText.substring(0, 80) + '...' : selectedText}"
-                        </span>
-                    </p>
+                    <div className={`flex-shrink-0 mt-4 flex items-center p-3 rounded-lg bg-indigo-500/5 border border-indigo-500/10`}>
+                        <svg className="w-4 h-4 text-indigo-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+                        <p className={`text-xs md:text-sm ${currentTheme.infoText}`}>
+                            Reading Selection: <span className={`font-semibold ${currentTheme.highlightText} italic`}>
+                                "{selectedText.length > 60 ? selectedText.substring(0, 60) + '...' : selectedText}"
+                            </span>
+                        </p>
+                    </div>
                 )}
 
                 {/* Action Buttons */}
-                <div className="mt-6 flex flex-wrap gap-4 items-center">
+                <div className="flex-shrink-0 mt-8 flex flex-wrap gap-4 items-center justify-start">
                     
-                    {/* Speak / Pause / Resume Button */}
+                    {/* Primary Action: Speak / Pause / Resume */}
                     <button
                         onClick={isSpeaking ? handlePause : () => handleSpeak(false)}
                         disabled={!selectedVoice || (!text && !synth.paused) || isGeneratingAudio}
-                        className={`py-3 px-8 text-xl font-bold rounded-lg transition duration-200 min-w-[180px] 
+                        className={`py-3.5 px-8 text-base font-bold rounded-xl transition-all duration-300 min-w-[180px] flex items-center justify-center gap-2 group
                             ${isSpeaking 
-                                ? 'bg-yellow-600 hover:bg-yellow-700 text-white shadow-lg shadow-yellow-600/50' 
+                                ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-xl shadow-amber-600/20' 
                                 : isPaused
-                                    ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/50'
-                                    : `${currentTheme.accentBg} hover:opacity-90 ${currentTheme.highlightText} shadow-lg shadow-rose-600/50`}`
+                                    ? 'bg-rose-700 hover:bg-rose-600 text-white shadow-xl shadow-rose-700/20'
+                                    : `bg-rose-600 hover:bg-rose-700 text-white shadow-xl shadow-rose-600/30 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:hover:translate-y-0 disabled:shadow-none`}`
                         }
                     >
-                        {isSpeaking ? 'PAUSE' : (isPaused ? 'RESUME DICTATION' : 'START DICTATION')}
+                        {isSpeaking ? (
+                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd"></path></svg>
+                        ) : (
+                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd"></path></svg>
+                        )}
+                        {isSpeaking ? 'PAUSE' : (isPaused ? 'RESUME' : 'START DICTATION')}
                     </button>
 
-                    {/* Stop Button (appears when speaking or paused or generating audio) */}
+                    {/* Secondary Button: Generate Audio */}
+                    <button
+                        onClick={handleGenerateAudio}
+                        disabled={isSpeaking || isPaused || isGeneratingAudio || (!text && !selectedText)}
+                        className={`py-3.5 px-6 text-base font-semibold rounded-xl border-2 transition-all duration-300 min-w-[200px] flex items-center justify-center gap-2
+                            ${isGeneratingAudio 
+                                ? (isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-100 text-slate-500 border-slate-200')
+                                : `bg-transparent ${isDarkMode ? 'border-slate-800 text-slate-400' : 'border-slate-200 text-slate-600'} hover:border-rose-600 hover:text-rose-600 disabled:opacity-30`}`
+                        }
+                    >
+                        {isGeneratingAudio ? (
+                            <svg className="animate-spin h-5 w-5 text-indigo-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                        ) : (
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"></path></svg>
+                        )}
+                        {isGeneratingAudio ? 'RECORDING...' : 'Generate Audio File'}
+                    </button>
+
+                    {/* Danger Action: Stop */}
                     {(isSpeaking || isPaused || isGeneratingAudio) && (
                         <button
                             onClick={handleStop}
-                            className={`py-3 px-6 text-lg font-semibold rounded-lg bg-red-600 hover:bg-red-700 ${currentTheme.highlightText} shadow-md shadow-red-600/50`}
+                            className={`py-3.5 px-6 text-base font-semibold rounded-xl border-2 border-rose-500/30 text-rose-500 hover:bg-rose-500/10 transition-all duration-300 flex items-center gap-2 shadow-lg shadow-rose-500/5`}
                         >
+                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clipRule="evenodd"></path></svg>
                             STOP
                         </button>
                     )}
                     
+                    {/* Ghost Action: Clear */}
                     <button
                         onClick={() => setText('')}
                         disabled={isSpeaking || isPaused || isGeneratingAudio}
-                        className={`py-3 px-6 text-lg font-semibold rounded-lg ${currentTheme.buttonSecondaryBg} ${currentTheme.buttonSecondaryHover} ${currentTheme.buttonSecondaryText} disabled:opacity-50`}
+                        className={`py-3.5 px-6 text-sm font-medium text-slate-500 hover:text-slate-300 transition-colors duration-200 disabled:opacity-0 underline-offset-4 hover:underline`}
                     >
-                        Clear Text
-                    </button>
-                    
-                    {/* New Generate Audio Button */}
-                    <button
-                        onClick={handleGenerateAudio}
-                        disabled={isSpeaking || isPaused || isGeneratingAudio || (!text && !selectedText)}
-                        className={`py-3 px-6 text-lg font-semibold rounded-lg transition duration-200 min-w-[180px] 
-                            ${isGeneratingAudio 
-                                ? 'bg-indigo-800 text-white cursor-not-allowed'
-                                : `bg-green-600 hover:bg-green-700 ${currentTheme.highlightText} shadow-md shadow-green-600/50 disabled:opacity-50`}`
-                        }
-                    >
-                        {isGeneratingAudio ? 'RECORDING (Dictating)' : 'Generate Audio File'}
+                        Clear text
                     </button>
                 </div>
             </div>
